@@ -20,10 +20,7 @@ export default class Whisper extends Plugin {
 		this.settings = await this.settingsManager.loadSettings();
 
 		this.addRibbonIcon("activity", "Open recording controls", (evt) => {
-			if (!this.controls) {
-				this.controls = new Controls(this);
-			}
-			this.controls.open();
+			this.openRecordingControls();
 		});
 
 		this.addSettingTab(new WhisperSettingsTab(this.app, this));
@@ -35,6 +32,29 @@ export default class Whisper extends Plugin {
 		this.statusBar = new StatusBar(this);
 
 		this.addCommands();
+		this.registerEditorMenu();
+	}
+
+	registerEditorMenu() {
+		this.registerEvent(
+			this.app.workspace.on('editor-menu', (menu, editor, view) => {
+				menu.addItem((item) => {
+					item
+						.setTitle("语音输入文字")
+						.setIcon("microphone")
+						.onClick(() => {
+							this.openRecordingControls();
+						});
+				});
+			})
+		);
+	}
+
+	openRecordingControls() {
+		if (!this.controls) {
+			this.controls = new Controls(this);
+		}
+		this.controls.open();
 	}
 
 	onunload() {
@@ -102,6 +122,14 @@ export default class Whisper extends Plugin {
 				// Programmatically open the file dialog
 				fileInput.click();
 			},
+		});
+
+		this.addCommand({
+			id: "open-recording-controls",
+			name: "打开录音控制面板",
+			callback: () => {
+				this.openRecordingControls();
+			}
 		});
 	}
 }

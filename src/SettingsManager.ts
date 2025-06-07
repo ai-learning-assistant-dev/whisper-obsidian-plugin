@@ -11,6 +11,11 @@ export interface WhisperSettings {
 	debugMode: boolean;
 	createNewFileAfterRecording: boolean;
 	createNewFileAfterRecordingPath: string;
+	useLocalService: boolean;
+	localServiceUrl: string;
+	encode: boolean;
+	vadFilter: boolean;
+	translate: boolean;
 }
 
 export const DEFAULT_SETTINGS: WhisperSettings = {
@@ -19,11 +24,16 @@ export const DEFAULT_SETTINGS: WhisperSettings = {
 	model: "whisper-1",
 	prompt: "",
 	language: "en",
-	saveAudioFile: true,
+	saveAudioFile: false,
 	saveAudioFilePath: "",
 	debugMode: false,
-	createNewFileAfterRecording: true,
+	createNewFileAfterRecording: false,
 	createNewFileAfterRecordingPath: "",
+	useLocalService: true,
+	localServiceUrl: "http://localhost:9000",
+	encode: true,
+	vadFilter: false,
+	translate: false,
 };
 
 export class SettingsManager {

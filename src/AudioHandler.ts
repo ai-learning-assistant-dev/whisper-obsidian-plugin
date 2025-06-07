@@ -1,7 +1,7 @@
 import axios from "axios";
 import Whisper from "main";
-import { Notice, MarkdownView } from "obsidian";
-import { getBaseFileName } from "./utils";
+import { Notice, MarkdownView, requestUrl } from "obsidian";
+import { getBaseFileName, payloadGenerator } from "./utils";
 
 export class AudioHandler {
 	private plugin: Whisper;
@@ -30,7 +30,7 @@ export class AudioHandler {
 			new Notice(`Sending audio data size: ${blob.size / 1000} KB`);
 		}
 
-		if (!this.plugin.settings.apiKey) {
+		if (!this.plugin.settings.useLocalService && !this.plugin.settings.apiKey) {
 			new Notice(
 				"API key is missing. Please add your API key in the settings."
 			);
@@ -63,16 +63,24 @@ export class AudioHandler {
 			if (this.plugin.settings.debugMode) {
 				new Notice("Parsing audio data:" + fileName);
 			}
-			const response = await axios.post(
-				this.plugin.settings.apiUrl,
-				formData,
-				{
-					headers: {
-						"Content-Type": "multipart/form-data",
-						Authorization: `Bearer ${this.plugin.settings.apiKey}`,
-					},
-				}
-			);
+
+			let response;
+			if (this.plugin.settings.useLocalService) {
+				// 使用本地 whisper ASR 服务
+				response = await this.sendToLocalService(blob, fileName);
+			} else {
+				// 使用远程 OpenAI API
+				response = await axios.post(
+					this.plugin.settings.apiUrl,
+					formData,
+					{
+						headers: {
+							"Content-Type": "multipart/form-data",
+							Authorization: `Bearer ${this.plugin.settings.apiKey}`,
+						},
+					}
+				);
+			}
 
 			// Determine if a new file should be created
 			const activeView =
@@ -114,5 +122,68 @@ export class AudioHandler {
 			console.error("Error parsing audio:", err);
 			new Notice("Error parsing audio: " + err.message);
 		}
+	}
+
+	async sendToLocalService(blob: Blob, fileName: string): Promise<{data: {text: string}}> {
+		const payload_data: Record<string, any> = {};
+		payload_data["audio_file"] = blob;
+		const [request_body, boundary_string] = await payloadGenerator(payload_data);
+		
+		let args = "output=json";
+		args += `&word_timestamps=true`;
+		
+		const { translate, encode, vadFilter, language, prompt } = this.plugin.settings;
+		if (translate) args += `&task=translate`;
+		if (encode !== true) args += `&encode=${encode}`;
+		if (vadFilter !== false) args += `&vad_filter=${vadFilter}`;
+		if (language !== "en") args += `&language=${language}`;
+		if (prompt) args += `&initial_prompt=${prompt}`;
+		
+		const urls = this.plugin.settings.localServiceUrl.split(";").filter(Boolean);
+		
+		for (const baseUrl of urls) {
+			const url = `${baseUrl}/asr?${args}`;
+			console.log("Trying URL:", url);
+			
+			const options = {
+				method: "POST",
+				url,
+				contentType: `multipart/form-data; boundary=----${boundary_string}`,
+				body: request_body
+			};
+			
+			console.log("Options:", options);
+			
+			try {
+				const response = await requestUrl(options);
+				if (this.plugin.settings.debugMode) {
+					console.log("Raw response:", response);
+				}
+				
+				// 处理响应数据，确保格式与 OpenAI API 兼容
+				let transcriptionText = "";
+				if (response.json && response.json.text) {
+					transcriptionText = response.json.text;
+				} else if (response.json && response.json.segments) {
+					transcriptionText = response.json.segments.map((segment: any) => segment.text).join("");
+				}
+				
+				return {
+					data: {
+						text: transcriptionText
+					}
+				};
+			} catch (error) {
+				if (this.plugin.settings.debugMode) {
+					console.error("Error with URL:", url, error);
+				}
+				// 如果是最后一个 URL，抛出错误
+				if (baseUrl === urls[urls.length - 1]) {
+					throw error;
+				}
+			}
+		}
+		
+		throw new Error("All local service URLs failed");
 	}
 }
